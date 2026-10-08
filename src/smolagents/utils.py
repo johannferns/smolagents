@@ -187,9 +187,15 @@ def parse_json_blob(json_blob: str) -> tuple[dict[str, str], str]:
 
 
 def extract_code_from_text(text: str, code_block_tags: tuple[str, str]) -> str | None:
-    """Extract code from the LLM's output."""
-    pattern = rf"{code_block_tags[0]}(.*?){code_block_tags[1]}"
-    matches = re.findall(pattern, text, re.DOTALL)
+    """Extract code from the LLM's output.
+
+    The opening code tag must appear at the start of a line for a match
+    to be recognized. This allows the agent to freely mention code tags
+    inline in its thoughts without triggering execution, while still
+    supporting multiple well-formed code blocks.
+    """
+    pattern = rf"^{code_block_tags[0]}(.*?){code_block_tags[1]}"
+    matches = re.findall(pattern, text, re.MULTILINE | re.DOTALL)
     if matches:
         return "\n\n".join(match.strip() for match in matches)
     return None
@@ -214,6 +220,17 @@ def parse_code_blobs(text: str, code_block_tags: tuple[str, str]) -> str:
         matches = extract_code_from_text(text, ("```(?:python|py)", "\n```"))
     if matches:
         return matches
+    # Check if the opening tag exists mid-sentence (not at line start)
+    unanchored_pattern = rf"{code_block_tags[0]}(.*?){code_block_tags[1]}"
+    if re.search(unanchored_pattern, text, re.DOTALL):
+        raise ValueError(
+            "Your code snippet was not recognized because the opening code tag "
+            "does not appear at the start of a line. It looks like the tag is "
+            "embedded in prose. Please place the opening tag on its own line, "
+            "followed by the code, then the closing tag on its own line.\n"
+            "Here is your code snippet:\n"
+            f"{text}"
+        )
     # Maybe the LLM outputted a code blob directly
     try:
         ast.parse(text)
@@ -223,31 +240,26 @@ def parse_code_blobs(text: str, code_block_tags: tuple[str, str]) -> str:
 
     if "final" in text and "answer" in text:
         raise ValueError(
-            dedent(
-                f"""
-                Your code snippet is invalid, because the regex pattern {code_block_tags[0]}(.*?){code_block_tags[1]} was not found in it.
-                Here is your code snippet:
-                {text}
-                It seems like you're trying to return the final answer, you can do it as follows:
-                {code_block_tags[0]}
-                final_answer("YOUR FINAL ANSWER HERE")
-                {code_block_tags[1]}
-                """
-            ).strip()
+            f"Your code snippet is invalid, because the regex pattern "
+            f"{code_block_tags[0]}(.*?){code_block_tags[1]} was not found in it.\n"
+            f"Here is your code snippet:\n"
+            f"{text}\n"
+            f"It seems like you are trying to return the final answer, you can do it as follows:\n"
+            f"{code_block_tags[0]}\n"
+            f'final_answer("YOUR FINAL ANSWER HERE")\n'
+            f"{code_block_tags[1]}"
         )
     raise ValueError(
-        dedent(
-            f"""
-            Your code snippet is invalid, because the regex pattern {code_block_tags[0]}(.*?){code_block_tags[1]} was not found in it.
-            Here is your code snippet:
-            {text}
-            Make sure to include code with the correct pattern, for instance:
-            Thoughts: Your thoughts
-            {code_block_tags[0]}
-            # Your python code here
-            {code_block_tags[1]}
-            """
-        ).strip()
+        f"Your code snippet is invalid, because the regex pattern "
+        f"{code_block_tags[0]}(.*?){code_block_tags[1]} was not found in it.\n"
+        f"Here is your code snippet:\n"
+        f"{text}\n"
+        f"Make sure to include code with the correct pattern, for instance:\n"
+        f"Thoughts: Your thoughts\n"
+        f"{code_block_tags[0]}\n"
+        f"# Your python code here\n"
+        f"{code_block_tags[1]}\n"
+        f"Note: the opening code tag must be placed on its own line (at the start of a line) to be recognized."
     )
 
 

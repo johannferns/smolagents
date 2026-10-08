@@ -142,6 +142,14 @@ import numpy as np
         result = parse_code_blobs(test_input, ("<code>", "</code>"))
         assert result == "Foo\n\ncode_a\n\ncode_b"
 
+    def test_mid_sentence_code_tag(self):
+        o=chr(60)+"code"+chr(62)
+        c=chr(60)+"/"+"code"+chr(62)
+        test_input="Here is some code: "+o+chr(10)+"print(1)"+chr(10)+c
+        with pytest.raises(ValueError) as exc_info:
+            parse_code_blobs(test_input,(o,c))
+        assert "start of a line" in str(exc_info.value)
+
 
 @pytest.fixture(scope="function")
 def ipython_shell():
@@ -552,3 +560,5 @@ def test_agent_gradio_app_template_excludes_class_keyword():
         ast.parse(result)
     except SyntaxError as e:
         pytest.fail(f"Generated app.py contains syntax error: {e}")
+
+
